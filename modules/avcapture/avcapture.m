@@ -196,7 +196,6 @@ static void vidframe_set_pixbuf(struct vidframe *f, const CVImageBufferRef b)
 
 	queue = dispatch_queue_create("avcapture", NULL);
 	[output setSampleBufferDelegate:self queue:queue];
-	dispatch_release(queue);
 
 	sess.sessionPreset = [self map_preset:dev sz:sz];
 
@@ -228,8 +227,6 @@ static void vidframe_set_pixbuf(struct vidframe *f, const CVImageBufferRef b)
 	if (output)
 		[sess removeOutput:output];
 	[sess commitConfiguration];
-
-	[sess release];
 }
 
 
@@ -295,8 +292,6 @@ static void destructor(void *arg)
 	[st->cap performSelectorOnMainThread:@selector(stop:)
 	        withObject:nil
 	        waitUntilDone:YES];
-
-	[st->cap release];
 }
 
 
@@ -306,7 +301,6 @@ static int alloc(struct vidsrc_st **stp, const struct vidsrc *vs,
 		 const char *dev, vidsrc_frame_h *frameh,
 		 vidsrc_error_h *errorh, void *arg)
 {
-	NSAutoreleasePool *pool;
 	struct vidsrc_st *st;
 	int err = 0;
 
@@ -323,27 +317,24 @@ static int alloc(struct vidsrc_st **stp, const struct vidsrc *vs,
 	if (!st)
 		return ENOMEM;
 
-	pool = [NSAutoreleasePool new];
-
-	st->vs     = vs;
-	st->frameh = frameh;
-	st->arg    = arg;
-
-	st->cap = [[avcap alloc] init:st
-				 dev:dev ? dev : "front"
-				 size:size];
-	if (!st->cap) {
-		err = ENODEV;
-		goto out;
-	}
-
+    @autoreleasepool {
+        st->vs     = vs;
+        st->frameh = frameh;
+        st->arg    = arg;
+        
+        st->cap = [[avcap alloc] init:st
+                                  dev:dev ? dev : "front"
+                                 size:size];
+        if (!st->cap) {
+            err = ENODEV;
+            goto out;
+        }
+    }
  out:
 	if (err)
 		mem_deref(st);
 	else
 		*stp = st;
-
-	[pool release];
 
 	return err;
 }
@@ -365,35 +356,32 @@ static void update(struct vidsrc_st *st, struct vidsrc_prm *prm,
 static int module_init(void)
 {
 	AVCaptureDevice *dev = nil;
-	NSAutoreleasePool *pool;
 	Class cls = NSClassFromString(@"AVCaptureDevice");
 	int err = 0;
 	if (!cls)
 		return ENOSYS;
 
-	pool = [NSAutoreleasePool new];
-
-	err = vidsrc_register(&vidsrc, baresip_vidsrcl(),
-			      "avcapture", alloc, update);
-	if (err)
-		goto out;
-
-	/* populate devices */
-	for (dev in [AVCaptureDevice devicesWithMediaType:AVMediaTypeVideo]) {
-
-		const char *name = [[dev localizedName] UTF8String];
-
-		debug("avcapture: found video device '%s'\n", name);
-
-		err = mediadev_add(&vidsrc->dev_list, name);
-		if (err)
-			goto out;
-	}
-
+    @autoreleasepool {
+        err = vidsrc_register(&vidsrc, baresip_vidsrcl(),
+                              "avcapture", alloc, update);
+        if (err)
+            goto out;
+        
+        /* populate devices */
+        for (dev in [AVCaptureDevice devicesWithMediaType:AVMediaTypeVideo]) {
+            
+            const char *name = [[dev localizedName] UTF8String];
+            
+            debug("avcapture: found video device '%s'\n", name);
+            
+            err = mediadev_add(&vidsrc->dev_list, name);
+            if (err)
+                goto out;
+        }
+    }
  out:
-	[pool drain];
 
-	return err;
+    return err;
 }
 
 
